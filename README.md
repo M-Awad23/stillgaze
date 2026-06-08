@@ -32,4 +32,5 @@ Configuration:
 - `OLLAMA_BASE_URL`: defaults to `http://localhost:11434`
 - `OLLAMA_MODEL`: defaults to `llama2:13b`
 - `OLLAMA_NUM_GPU`: optional; set to `0` to force CPU inference through Ollama
+- `OLLAMA_NUM_PREDICT`: defaults to `160` to keep local CPU generations shorter
 - `OLLAMA_TIMEOUT_SECONDS`: defaults to `120`

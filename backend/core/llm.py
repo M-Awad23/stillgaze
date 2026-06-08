@@ -31,6 +31,7 @@ def chat_with_ollama(
     messages: Iterable[ChatMessage],
     model: str | None = None,
     temperature: float | None = None,
+    num_predict: int | None = None,
 ) -> ChatResult:
     settings = get_settings()
     selected_model = model or settings.ollama_model
@@ -45,6 +46,7 @@ def chat_with_ollama(
         options["temperature"] = temperature
     if settings.ollama_num_gpu is not None:
         options["num_gpu"] = settings.ollama_num_gpu
+    options["num_predict"] = num_predict or settings.ollama_num_predict
     if options:
         payload["options"] = options
 

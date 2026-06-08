@@ -14,6 +14,7 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage] = Field(min_length=1)
     model: str | None = None
     temperature: Annotated[float | None, Field(ge=0, le=2)] = None
+    max_tokens: Annotated[int | None, Field(ge=32, le=1024)] = None
 
 
 class ChatResponse(BaseModel):
@@ -37,6 +38,7 @@ def chat(request: ChatRequest) -> ChatResponse:
             messages=request.messages,
             model=request.model,
             temperature=request.temperature,
+            num_predict=request.max_tokens,
         )
     except OllamaError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc

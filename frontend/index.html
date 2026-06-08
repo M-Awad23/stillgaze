@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>StillGaze</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="panel session-panel" aria-label="Session">
+        <div class="sidebar-top">
+          <h1>StillGaze</h1>
+          <div class="theme-control">
+            <label for="themeToggle">Dark mode</label>
+            <input id="themeToggle" type="checkbox" role="switch" />
+          </div>
+        </div>
+
+        <div class="section-heading">
+          <div class="section-title">Chats</div>
+          <button class="new-chat-button" id="newChatButton" type="button">New chat</button>
+        </div>
+
+        <div class="chat-list" id="chatList" aria-label="Saved chats"></div>
+
+        <div class="status-panel">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="statusLabel">Checking local model</span>
+        </div>
+
+        <div class="model-label" id="modelLabel">Connecting</div>
+
+        <details class="settings-panel">
+          <summary>Generation settings</summary>
+          <label for="temperature">Temperature</label>
+          <div class="range-row">
+            <input id="temperature" type="range" min="0" max="2" step="0.1" value="0.7" />
+            <output id="temperatureValue" for="temperature">0.7</output>
+          </div>
+
+          <label for="responseLimit">Response limit</label>
+          <select id="responseLimit">
+            <option value="96">Short</option>
+            <option value="160" selected>Balanced</option>
+            <option value="320">Long</option>
+          </select>
+        </details>
+      </section>
+
+      <section class="panel chat-panel" aria-label="Chat">
+        <div class="section-title">Conversation</div>
+        <div class="messages" id="messages" aria-live="polite"></div>
+      </section>
+
+      <section class="panel composer-panel" aria-label="Composer">
+        <div class="section-title">Prompt</div>
+        <form class="composer" id="chatForm">
+          <label class="sr-only" for="messageInput">Message</label>
+          <textarea
+            id="messageInput"
+            name="message"
+            rows="1"
+            placeholder="Write a message..."
+            autocomplete="off"
+            required
+          ></textarea>
+          <button class="send-button" id="sendButton" type="submit" title="Send" aria-label="Send">
+            Send
+          </button>
+        </form>
+      </section>
+    </main>
+
+    <div class="menu-popover" id="chatMenu" hidden>
+      <button type="button" data-action="rename">Rename</button>
+      <button type="button" data-action="pin">Pin</button>
+      <button type="button" data-action="archive">Archive</button>
+      <button type="button" data-action="export-txt">Export TXT</button>
+      <button type="button" data-action="export-html">Export HTML</button>
+      <button type="button" data-action="delete">Delete</button>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
