@@ -27,6 +27,27 @@ class OllamaError(RuntimeError):
     pass
 
 
+def list_ollama_models() -> list[str]:
+    settings = get_settings()
+    request = Request(f"{settings.ollama_base_url}/api/tags", method="GET")
+
+    try:
+        with urlopen(request, timeout=2) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        raise OllamaError("Could not load local Ollama models.") from exc
+
+    models = data.get("models", [])
+    if not isinstance(models, list):
+        raise OllamaError("Ollama returned an unexpected models response.")
+
+    return [
+        model["name"]
+        for model in models
+        if isinstance(model, dict) and isinstance(model.get("name"), str)
+    ]
+
+
 def chat_with_ollama(
     messages: Iterable[ChatMessage],
     model: str | None = None,

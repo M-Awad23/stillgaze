@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.core.config import get_settings
-from backend.core.llm import ChatMessage, OllamaError, chat_with_ollama
+from backend.core.llm import ChatMessage, OllamaError, chat_with_ollama, list_ollama_models
 
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -22,6 +22,12 @@ class ChatResponse(BaseModel):
     message: ChatMessage
 
 
+class ModelsResponse(BaseModel):
+    default_model: str
+    models: list[str]
+    available: bool
+
+
 @router.get("/model")
 def get_default_model() -> dict[str, str]:
     settings = get_settings()
@@ -29,6 +35,24 @@ def get_default_model() -> dict[str, str]:
         "model": settings.ollama_model,
         "ollama_base_url": settings.ollama_base_url,
     }
+
+
+@router.get("/models", response_model=ModelsResponse)
+def get_models() -> ModelsResponse:
+    settings = get_settings()
+    try:
+        models = list_ollama_models()
+    except OllamaError as exc:
+        return ModelsResponse(
+            default_model=settings.ollama_model,
+            models=[settings.ollama_model],
+            available=False,
+        )
+
+    if settings.ollama_model not in models:
+        models.insert(0, settings.ollama_model)
+
+    return ModelsResponse(default_model=settings.ollama_model, models=models, available=True)
 
 
 @router.post("", response_model=ChatResponse)

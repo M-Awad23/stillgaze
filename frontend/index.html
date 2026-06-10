@@ -29,11 +29,13 @@
         <div class="chat-list" id="chatList" aria-label="Saved chats"></div>
 
         <div class="status-panel">
-          <span class="status-dot" aria-hidden="true"></span>
-          <span id="statusLabel">Checking local model</span>
+          <span id="statusLabel">Checking Ollama</span>
         </div>
 
-        <div class="model-label" id="modelLabel">Connecting</div>
+        <label for="modelSelect">Model</label>
+        <select id="modelSelect">
+          <option>Loading models...</option>
+        </select>
 
         <details class="settings-panel">
           <summary>Generation settings</summary>

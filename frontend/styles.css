@@ -280,14 +280,9 @@ label {
   cursor: pointer;
 }
 
-.model-label,
 .settings-panel {
   font-family: "IBM Plex Mono", Consolas, monospace;
   font-size: 0.78rem;
-}
-
-.model-label {
-  color: var(--faint);
 }
 
 .settings-panel {
@@ -365,7 +360,7 @@ label {
   gap: 10px;
   min-height: 38px;
   padding: 9px 10px;
-  border-left: 3px solid #aaa;
+  border-left: 3px solid var(--grid);
   color: var(--message-text);
   background: var(--soft);
   font-family: "IBM Plex Mono", Consolas, monospace;
@@ -373,21 +368,10 @@ label {
   line-height: 1.45;
 }
 
-.status-dot {
-  width: 7px;
-  height: 7px;
-  flex: 0 0 auto;
-  background: #aaa;
-}
-
 .status-panel.is-ready {
-  border-left-color: var(--ok);
-  color: var(--ok);
-  background: var(--ok-bg);
-}
-
-.status-panel.is-ready .status-dot {
-  background: var(--ok);
+  border-left-color: var(--grid);
+  color: var(--muted);
+  background: var(--soft);
 }
 
 .status-panel.is-error {
@@ -468,6 +452,26 @@ output {
 
 .message.pending {
   color: var(--faint);
+}
+
+.empty-state {
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  min-height: 100%;
+  gap: 12px;
+  color: var(--message-text);
+}
+
+.empty-state h2 {
+  font-size: 1.35rem;
+  font-weight: 500;
+}
+
+.empty-state p {
+  max-width: 48ch;
+  color: var(--muted);
+  line-height: 1.6;
 }
 
 .composer {

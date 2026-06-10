@@ -4,7 +4,7 @@ const messagesEl = document.querySelector("#messages");
 const sendButton = document.querySelector("#sendButton");
 const statusPanel = document.querySelector(".status-panel");
 const statusLabel = document.querySelector("#statusLabel");
-const modelLabel = document.querySelector("#modelLabel");
+const modelSelect = document.querySelector("#modelSelect");
 const temperature = document.querySelector("#temperature");
 const temperatureValue = document.querySelector("#temperatureValue");
 const responseLimit = document.querySelector("#responseLimit");
@@ -13,12 +13,8 @@ const newChatButton = document.querySelector("#newChatButton");
 const chatList = document.querySelector("#chatList");
 const chatMenu = document.querySelector("#chatMenu");
 
-const CHAT_STORE_KEY = "stillgaze-chats";
+const LEGACY_CHAT_STORE_KEY = "stillgaze-chats";
 const ACTIVE_CHAT_KEY = "stillgaze-active-chat";
-const WELCOME_MESSAGE = {
-  role: "assistant",
-  content: "StillGaze is awake. What should we look at first?",
-};
 const TITLE_STOPWORDS = new Set([
   "a", "an", "and", "are", "about", "can", "could", "do", "does", "for", "from",
   "help", "how", "i", "in", "is", "it", "me", "my", "of", "on", "please", "soon",
@@ -32,76 +28,146 @@ const useDarkTheme = savedTheme ? savedTheme === "dark" : prefersDark;
 document.body.classList.toggle("dark", useDarkTheme);
 themeToggle.checked = useDarkTheme;
 
-let chats = loadChats();
+let chats = [];
 let activeChatId = localStorage.getItem(ACTIVE_CHAT_KEY);
 let menuChatId = null;
-if (!chats.some((chat) => chat.id === activeChatId && !chat.archived)) {
-  activeChatId = visibleChats()[0]?.id || createChat().id;
-}
-
-function createId() {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function createChat() {
-  const now = new Date().toISOString();
-  const chat = {
-    id: createId(),
-    title: "New chat",
-    createdAt: now,
-    updatedAt: now,
-    pinned: false,
-    archived: false,
-    messages: [{ ...WELCOME_MESSAGE }],
-  };
-  chats.unshift(chat);
-  activeChatId = chat.id;
-  persistChats();
-  return chat;
-}
-
-function loadChats() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(CHAT_STORE_KEY) || "[]");
-    if (Array.isArray(stored) && stored.length > 0) {
-      return stored.map((chat) => ({
-        ...chat,
-        pinned: Boolean(chat.pinned),
-        archived: Boolean(chat.archived),
-        messages: chat.messages.filter((message) => !message.role.includes("pending")),
-      }));
-    }
-  } catch {
-    localStorage.removeItem(CHAT_STORE_KEY);
-  }
-  return [];
-}
-
-function persistChats() {
-  localStorage.setItem(CHAT_STORE_KEY, JSON.stringify(chats));
-  localStorage.setItem(ACTIVE_CHAT_KEY, activeChatId);
-}
 
 function visibleChats() {
   return chats
     .filter((chat) => !chat.archived)
-    .sort((a, b) => Number(b.pinned) - Number(a.pinned) || new Date(b.updatedAt) - new Date(a.updatedAt));
+    .sort((a, b) => Number(b.pinned) - Number(a.pinned) || new Date(b.updated_at) - new Date(a.updated_at));
 }
 
 function archivedChats() {
   return chats
     .filter((chat) => chat.archived)
-    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
 }
 
 function getActiveChat() {
-  return chats.find((chat) => chat.id === activeChatId) || visibleChats()[0] || chats[0];
+  return chats.find((chat) => chat.id === activeChatId) || null;
+}
+
+function persistActiveChat() {
+  if (activeChatId) {
+    localStorage.setItem(ACTIVE_CHAT_KEY, activeChatId);
+  } else {
+    localStorage.removeItem(ACTIVE_CHAT_KEY);
+  }
+}
+
+async function apiJson(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+  });
+
+  if (response.status === 204) return null;
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.detail || "Request failed");
+  }
+  return data;
+}
+
+async function loadChats() {
+  chats = await apiJson("/api/chats");
+  if (chats.length === 0) {
+    await migrateLegacyChats();
+    chats = await apiJson("/api/chats");
+  }
+
+  if (!chats.some((chat) => chat.id === activeChatId && !chat.archived)) {
+    activeChatId = visibleChats()[0]?.id || null;
+    persistActiveChat();
+  }
+  render();
+}
+
+async function migrateLegacyChats() {
+  let legacyChats = [];
+  try {
+    legacyChats = JSON.parse(localStorage.getItem(LEGACY_CHAT_STORE_KEY) || "[]");
+  } catch {
+    localStorage.removeItem(LEGACY_CHAT_STORE_KEY);
+  }
+  if (!Array.isArray(legacyChats) || legacyChats.length === 0) return;
+
+  for (const legacy of legacyChats) {
+    const chat = await createChat(legacy.title || "New chat", { setActive: false });
+    await patchChat(chat.id, {
+      title: legacy.title || "New chat",
+      pinned: Boolean(legacy.pinned),
+      archived: Boolean(legacy.archived),
+      manual_title: Boolean(legacy.manualTitle || legacy.manual_title),
+    });
+    for (const message of legacy.messages || []) {
+      if (!message.role || message.role.includes("pending")) continue;
+      await createMessage(chat.id, message.role, message.content);
+    }
+  }
+  localStorage.removeItem(LEGACY_CHAT_STORE_KEY);
+}
+
+async function createChat(title = "New chat", options = { setActive: true }) {
+  const chat = await apiJson("/api/chats", {
+    method: "POST",
+    body: JSON.stringify({ title }),
+  });
+  chats.unshift(chat);
+  if (options.setActive) {
+    activeChatId = chat.id;
+    persistActiveChat();
+  }
+  return chat;
+}
+
+async function patchChat(chatId, patch) {
+  const updated = await apiJson(`/api/chats/${chatId}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+  upsertChat(updated);
+  return updated;
+}
+
+async function deleteChatById(chatId) {
+  await apiJson(`/api/chats/${chatId}`, { method: "DELETE" });
+  chats = chats.filter((chat) => chat.id !== chatId);
+  if (activeChatId === chatId) {
+    activeChatId = visibleChats()[0]?.id || null;
+    persistActiveChat();
+  }
+}
+
+async function createMessage(chatId, role, content) {
+  const message = await apiJson(`/api/chats/${chatId}/messages`, {
+    method: "POST",
+    body: JSON.stringify({ role, content }),
+  });
+  const chat = chats.find((item) => item.id === chatId);
+  if (chat) {
+    chat.messages.push(message);
+    chat.updated_at = message.created_at;
+  }
+  return message;
+}
+
+function upsertChat(updated) {
+  const index = chats.findIndex((chat) => chat.id === updated.id);
+  if (index === -1) {
+    chats.unshift(updated);
+  } else {
+    chats[index] = updated;
+  }
 }
 
 function summarizeTitle(message) {
-  const normalized = message
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, " ");
+  const normalized = message.toLowerCase().replace(/[^a-z0-9\s-]/g, " ");
   const words = normalized
     .split(/\s+/)
     .filter((word) => word && !TITLE_STOPWORDS.has(word));
@@ -115,10 +181,7 @@ function summarizeTitle(message) {
   }
 
   const topicWords = (words.length ? words : message.split(/\s+/)).slice(0, 4);
-  const title = topicWords
-    .join(" ")
-    .trim();
-  return titleCase(title || "New chat");
+  return titleCase(topicWords.join(" ").trim() || "New chat");
 }
 
 function titleCase(value) {
@@ -161,7 +224,7 @@ function renderChatGroup(groupChats, label) {
     const meta = document.createElement("span");
     meta.className = "chat-meta";
     const userCount = chat.messages.filter((message) => message.role === "user").length;
-    meta.textContent = `${userCount} prompt${userCount === 1 ? "" : "s"} | ${formatChatDate(chat.updatedAt)}`;
+    meta.textContent = `${userCount} prompt${userCount === 1 ? "" : "s"} | ${formatChatDate(chat.updated_at)}`;
 
     const menu = document.createElement("button");
     menu.className = "chat-menu-button";
@@ -177,7 +240,6 @@ function renderChatGroup(groupChats, label) {
 }
 
 function renderChatList() {
-  migrateGeneratedTitles();
   chatList.innerHTML = "";
   const active = visibleChats();
   const archived = archivedChats();
@@ -193,25 +255,20 @@ function renderChatList() {
   renderChatGroup(archived, "Archived");
 }
 
-function migrateGeneratedTitles() {
-  let changed = false;
-  for (const chat of chats) {
-    if (chat.manualTitle) continue;
-    const firstUserMessage = chat.messages.find((message) => message.role === "user");
-    if (!firstUserMessage) continue;
-    const nextTitle = summarizeTitle(firstUserMessage.content);
-    if (chat.title !== nextTitle) {
-      chat.title = nextTitle;
-      changed = true;
-    }
-  }
-  if (changed) persistChats();
-}
-
 function renderMessages() {
   const activeChat = getActiveChat();
   messagesEl.innerHTML = "";
-  if (!activeChat) return;
+  if (!activeChat || activeChat.messages.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.innerHTML = `
+      <h2>Start with a question.</h2>
+      <p>Choose a model, write a prompt, and StillGaze will create a new chat from your first message.</p>
+    `;
+    messagesEl.appendChild(empty);
+    return;
+  }
+
   for (const message of activeChat.messages) {
     const bubble = document.createElement("article");
     bubble.className = `message ${message.role}`;
@@ -239,13 +296,20 @@ function syncTextareaHeight() {
 
 async function loadModelStatus() {
   try {
-    const response = await fetch("/api/chat/model");
+    const response = await fetch("/api/chat/models");
     if (!response.ok) throw new Error("Model status failed");
     const data = await response.json();
-    modelLabel.textContent = `Model: ${data.model}`;
-    setStatus("ready", "Local model ready");
+    modelSelect.innerHTML = "";
+    for (const model of data.models) {
+      const option = document.createElement("option");
+      option.value = model;
+      option.textContent = model;
+      option.selected = model === data.default_model;
+      modelSelect.appendChild(option);
+    }
+    setStatus(data.available ? "ready" : "error", data.available ? "Ollama connected" : "Ollama offline");
   } catch {
-    modelLabel.textContent = "Model: offline";
+    modelSelect.innerHTML = '<option value="">No models loaded</option>';
     setStatus("error", "Ollama unavailable");
   }
 }
@@ -269,40 +333,31 @@ function openChatMenu(chatId, anchor) {
 
 function selectChat(chatId) {
   activeChatId = chatId;
-  persistChats();
+  persistActiveChat();
   render();
   input.focus();
 }
 
-function ensureActiveVisibleChat() {
-  const active = chats.find((chat) => chat.id === activeChatId);
-  if (!active || active.archived) {
-    activeChatId = visibleChats()[0]?.id || createChat().id;
-  }
-}
-
-function renameChat(chat) {
+async function renameChat(chat) {
   const nextTitle = window.prompt("Rename chat", chat.title);
   if (!nextTitle?.trim()) return;
-  chat.title = nextTitle.trim().slice(0, 80);
-  chat.manualTitle = true;
-  chat.updatedAt = new Date().toISOString();
-  persistChats();
+  await patchChat(chat.id, {
+    title: nextTitle.trim().slice(0, 80),
+    manual_title: true,
+  });
   render();
 }
 
-function deleteChat(chat) {
+async function deleteChat(chat) {
   if (!window.confirm(`Delete "${chat.title}"?`)) return;
-  chats = chats.filter((item) => item.id !== chat.id);
-  ensureActiveVisibleChat();
-  persistChats();
+  await deleteChatById(chat.id);
   render();
 }
 
 function exportChat(chat, format) {
   const date = new Date().toISOString();
   const transcript = chat.messages
-    .map((message) => `${message.role.replace("assistant pending", "assistant").toUpperCase()}\n${message.content}`)
+    .map((message) => `${message.role.toUpperCase()}\n${message.content}`)
     .join("\n\n");
   const safeTitle = chat.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "stillgaze-chat";
   const isHtml = format === "html";
@@ -327,34 +382,40 @@ function escapeHtml(value) {
   })[char]);
 }
 
-function handleMenuAction(action) {
+async function handleMenuAction(action) {
   const chat = chats.find((item) => item.id === menuChatId);
   if (!chat) return;
 
-  if (action === "rename") renameChat(chat);
-  if (action === "pin") chat.pinned = !chat.pinned;
+  if (action === "rename") await renameChat(chat);
+  if (action === "pin") await patchChat(chat.id, { pinned: !chat.pinned });
   if (action === "archive") {
-    chat.archived = !chat.archived;
-    if (chat.archived) chat.pinned = false;
-    ensureActiveVisibleChat();
+    await patchChat(chat.id, { archived: !chat.archived });
+    if (activeChatId === chat.id && !chat.archived) {
+      activeChatId = visibleChats().find((item) => item.id !== chat.id)?.id || null;
+      persistActiveChat();
+    }
   }
   if (action === "export-txt") exportChat(chat, "txt");
   if (action === "export-html") exportChat(chat, "html");
-  if (action === "delete") deleteChat(chat);
+  if (action === "delete") await deleteChat(chat);
 
-  chat.updatedAt = new Date().toISOString();
-  persistChats();
   render();
 }
 
 async function sendMessage(content) {
-  const activeChat = getActiveChat();
-  const isFirstUserMessage = !activeChat.messages.some((message) => message.role === "user");
-  activeChat.messages.push({ role: "user", content });
-  activeChat.updatedAt = new Date().toISOString();
-  if (isFirstUserMessage) activeChat.title = summarizeTitle(content);
+  let activeChat = getActiveChat();
+  if (!activeChat) {
+    activeChat = await createChat("New chat");
+  }
 
-  const pending = { role: "assistant pending", content: "Thinking..." };
+  const isFirstUserMessage = !activeChat.messages.some((message) => message.role === "user");
+  if (isFirstUserMessage && !activeChat.manual_title) {
+    activeChat = await patchChat(activeChat.id, { title: summarizeTitle(content) });
+  }
+
+  const userMessage = await createMessage(activeChat.id, "user", content);
+  activeChat = getActiveChat();
+  const pending = { id: "pending", role: "assistant pending", content: "Thinking...", created_at: userMessage.created_at };
   activeChat.messages.push(pending);
   render();
 
@@ -374,6 +435,7 @@ async function sendMessage(content) {
           })),
         temperature: Number(temperature.value),
         max_tokens: Number(responseLimit.value),
+        model: modelSelect.value || undefined,
       }),
     });
 
@@ -382,17 +444,20 @@ async function sendMessage(content) {
       throw new Error(data.detail || "Chat request failed");
     }
 
-    pending.role = "assistant";
-    pending.content = data.message.content;
-    activeChat.updatedAt = new Date().toISOString();
-    setStatus("ready", "Local model ready");
+    activeChat.messages = activeChat.messages.filter((message) => message.id !== "pending");
+    await createMessage(activeChat.id, "assistant", data.message.content);
+    setStatus("ready", "Ollama connected");
   } catch (error) {
-    pending.role = "assistant";
-    pending.content = error.message;
-    activeChat.updatedAt = new Date().toISOString();
+    activeChat.messages = activeChat.messages.filter((message) => message.id !== "pending");
+    activeChat.messages.push({
+      id: "error",
+      chat_id: activeChat.id,
+      role: "assistant",
+      content: error.message,
+      created_at: new Date().toISOString(),
+    });
     setStatus("error", "Request failed");
   } finally {
-    persistChats();
     sendButton.disabled = false;
     input.disabled = false;
     input.focus();
@@ -417,8 +482,8 @@ input.addEventListener("keydown", (event) => {
   }
 });
 
-newChatButton.addEventListener("click", () => {
-  createChat();
+newChatButton.addEventListener("click", async () => {
+  await createChat();
   closeChatMenu();
   render();
   input.focus();
@@ -438,10 +503,10 @@ chatList.addEventListener("click", (event) => {
   selectChat(openButton.dataset.chatOpen);
 });
 
-chatMenu.addEventListener("click", (event) => {
+chatMenu.addEventListener("click", async (event) => {
   const actionButton = event.target.closest("[data-action]");
   if (!actionButton) return;
-  handleMenuAction(actionButton.dataset.action);
+  await handleMenuAction(actionButton.dataset.action);
   closeChatMenu();
 });
 
@@ -464,3 +529,6 @@ themeToggle.addEventListener("change", () => {
 render();
 syncTextareaHeight();
 loadModelStatus();
+loadChats().catch((error) => {
+  setStatus("error", error.message);
+});
