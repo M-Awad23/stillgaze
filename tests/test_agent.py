@@ -231,13 +231,7 @@ class StreamTests(unittest.TestCase):
 
     @patch("backend.api.chat.stream_chat_with_ollama")
     def test_latest_message_supersedes_unresolved_request(self, mock_stream) -> None:
-        mock_stream.return_value = iter(
-            [
-                ChatStreamChunk(content="Hello!", done=False),
-                ChatStreamChunk(done=True, done_reason="stop"),
-            ]
-        )
-        list(
+        events = "".join(
             generate_chat_events(
                 ChatRequest(
                     messages=[
@@ -249,9 +243,8 @@ class StreamTests(unittest.TestCase):
                 )
             )
         )
-        sent_messages = mock_stream.call_args.kwargs["messages"]
-        self.assertIn("Prioritize the latest user message", sent_messages[0]["content"])
-        self.assertEqual(sent_messages[-1]["content"], "hello")
+        self.assertIn('"content": "Hello! How can I help?"', events)
+        mock_stream.assert_not_called()
 
 
 if __name__ == "__main__":

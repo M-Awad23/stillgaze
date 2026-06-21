@@ -1,4 +1,5 @@
 import json
+import re
 from collections.abc import Iterator
 from typing import Annotated
 
@@ -31,6 +32,11 @@ from backend.core.web_search import WebSource, build_web_augmented_messages, sho
 
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+STANDALONE_GREETING_RE = re.compile(
+    r"^\s*(?:hi|hello|hey|yo|good\s+(?:morning|afternoon|evening))(?:\s+stillgaze|\s+there)?[!.?]*\s*$",
+    re.IGNORECASE,
+)
+GREETING_RESPONSE = "Hello! How can I help?"
 
 
 class ToolCallRequest(BaseModel):
@@ -115,6 +121,11 @@ def chat(request: ChatRequest) -> ChatResponse:
     tool_results: list[AgentToolResult] = []
 
     latest_user = next((message.content for message in reversed(messages) if message.role == "user"), "")
+    if is_standalone_greeting(latest_user):
+        return ChatResponse(
+            model=request.model or get_settings().ollama_model,
+            message=ChatMessage(role="assistant", content=GREETING_RESPONSE),
+        )
     if memory_result := maybe_store_memory(latest_user):
         tool_results.append(memory_result)
 
@@ -224,6 +235,11 @@ def generate_chat_events(request: ChatRequest) -> Iterator[str]:
     web_sources: list[WebSource] = []
     tool_results: list[AgentToolResult] = []
     latest_user = next((message.content for message in reversed(messages) if message.role == "user"), "")
+
+    if is_standalone_greeting(latest_user):
+        yield ndjson_event("token", content=GREETING_RESPONSE)
+        yield ndjson_event("done", model=request.model or get_settings().ollama_model)
+        return
 
     if memory_result := maybe_store_memory(latest_user):
         tool_results.append(memory_result)
@@ -398,6 +414,10 @@ def dedupe_sources(sources: list[WebSource]) -> list[WebSource]:
         seen.add(source.url)
         unique.append(source)
     return unique
+
+
+def is_standalone_greeting(value: str) -> bool:
+    return bool(STANDALONE_GREETING_RE.fullmatch(value))
 
 
 def tool_fallback_message(tool_results: list[AgentToolResult]) -> str:
