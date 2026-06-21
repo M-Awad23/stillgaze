@@ -160,6 +160,13 @@ def chat(request: ChatRequest) -> ChatResponse:
                 ],
             )
 
+    if request.approved_tool_call:
+        return ChatResponse(
+            model=request.model or get_settings().ollama_model,
+            message=ChatMessage(role="assistant", content=approved_tool_message(tool_results)),
+            tools=[tool_result_to_response(tool_result) for tool_result in tool_results],
+        )
+
     if should_use_web(messages):
         messages, web_sources = build_web_augmented_messages(messages)
 
@@ -270,6 +277,11 @@ def generate_chat_events(request: ChatRequest) -> Iterator[str]:
                 for source in dedupe_sources(web_sources)
             ],
         )
+
+    if request.approved_tool_call:
+        yield ndjson_event("token", content=approved_tool_message(tool_results))
+        yield ndjson_event("done", model=request.model or get_settings().ollama_model)
+        return
 
     messages = augment_messages_with_local_context(messages, tool_results)
     selected_model = request.model or get_settings().ollama_model
@@ -393,6 +405,17 @@ def tool_fallback_message(tool_results: list[AgentToolResult]) -> str:
         if tool.content:
             lines.append(tool.content[:4_000])
     return "\n".join(lines)
+
+
+def approved_tool_message(tool_results: list[AgentToolResult]) -> str:
+    if not tool_results:
+        return "The approved local action did not return a result."
+    result = tool_results[-1]
+    if result.status == "error":
+        return f"I could not complete the approved local action: {result.summary}"
+    if result.name == "command.run" and result.content and result.content != "(no output)":
+        return f"Done. {result.summary}\n\nOutput:\n```text\n{result.content}\n```"
+    return f"Done. {result.summary}"
 
 
 def tool_call_to_response(call: AgentToolCall) -> ToolCallResponse:

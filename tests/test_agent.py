@@ -197,6 +197,38 @@ class StreamTests(unittest.TestCase):
         self.assertIn('"content": "First"', events)
         self.assertIn('"content": " second"', events)
 
+    @patch("backend.api.chat.stream_chat_with_ollama")
+    def test_approved_file_write_does_not_ask_again(self, mock_stream) -> None:
+        path = Path("tmp_approved_write.json")
+        call = register_pending_approval(
+            build_call(
+                "file.write",
+                {"path": str(path), "content": '{"done":true}', "mode": "replace"},
+                requires_confirmation=True,
+            )
+        )
+        try:
+            events = "".join(
+                generate_chat_events(
+                    ChatRequest(
+                        messages=[ChatMessage(role="user", content="Write the JSON file")],
+                        model="qwen2.5:7b",
+                        max_tokens=32,
+                        approved_tool_call={
+                            "id": call.id,
+                            "name": call.name,
+                            "arguments": call.arguments,
+                        },
+                    )
+                )
+            )
+            self.assertIn("Done. Updated local file", events)
+            self.assertNotIn("Would you like to proceed", events)
+            self.assertTrue(path.exists())
+            mock_stream.assert_not_called()
+        finally:
+            path.unlink(missing_ok=True)
+
 
 if __name__ == "__main__":
     unittest.main()
