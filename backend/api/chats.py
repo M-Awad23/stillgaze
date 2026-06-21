@@ -14,6 +14,8 @@ class MessageOut(BaseModel):
     chat_id: str
     role: Literal["system", "user", "assistant"]
     content: str
+    tools: list[dict[str, object]] = Field(default_factory=list)
+    sources: list[dict[str, object]] = Field(default_factory=list)
     created_at: str
 
 
@@ -25,7 +27,7 @@ class ChatOut(BaseModel):
     manual_title: bool
     created_at: str
     updated_at: str
-    messages: list[MessageOut] = []
+    messages: list[MessageOut] = Field(default_factory=list)
 
 
 class CreateChatRequest(BaseModel):
@@ -42,6 +44,8 @@ class UpdateChatRequest(BaseModel):
 class CreateMessageRequest(BaseModel):
     role: Literal["system", "user", "assistant"]
     content: str = Field(min_length=1)
+    tools: list[dict[str, object]] = Field(default_factory=list)
+    sources: list[dict[str, object]] = Field(default_factory=list)
 
 
 def hydrate_chat(chat: dict) -> ChatOut:
@@ -88,7 +92,13 @@ def list_messages(chat_id: str) -> list[MessageOut]:
 
 @router.post("/{chat_id}/messages", response_model=MessageOut, status_code=status.HTTP_201_CREATED)
 def create_message(chat_id: str, request: CreateMessageRequest) -> MessageOut:
-    message = storage.create_message(chat_id, request.role, request.content)
+    message = storage.create_message(
+        chat_id,
+        request.role,
+        request.content,
+        tools=request.tools,
+        sources=request.sources,
+    )
     if message is None:
         raise HTTPException(status_code=404, detail="Chat not found")
     return MessageOut(**message)

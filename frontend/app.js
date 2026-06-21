@@ -12,9 +12,14 @@ const themeToggle = document.querySelector("#themeToggle");
 const newChatButton = document.querySelector("#newChatButton");
 const chatList = document.querySelector("#chatList");
 const chatMenu = document.querySelector("#chatMenu");
+const toolApproval = document.querySelector("#toolApproval");
+const memoryForm = document.querySelector("#memoryForm");
+const memoryInput = document.querySelector("#memoryInput");
+const memoryList = document.querySelector("#memoryList");
 
 const LEGACY_CHAT_STORE_KEY = "stillgaze-chats";
 const ACTIVE_CHAT_KEY = "stillgaze-active-chat";
+const SELECTED_MODEL_KEY = "stillgaze-selected-model";
 const TITLE_STOPWORDS = new Set([
   "a", "an", "and", "are", "about", "can", "could", "do", "does", "for", "from",
   "help", "how", "i", "in", "is", "it", "me", "my", "of", "on", "please", "soon",
@@ -29,8 +34,10 @@ document.body.classList.toggle("dark", useDarkTheme);
 themeToggle.checked = useDarkTheme;
 
 let chats = [];
+let memories = [];
 let activeChatId = localStorage.getItem(ACTIVE_CHAT_KEY);
 let menuChatId = null;
+let pendingToolCall = null;
 
 function visibleChats() {
   return chats
@@ -86,6 +93,11 @@ async function loadChats() {
     persistActiveChat();
   }
   render();
+}
+
+async function loadMemories() {
+  memories = await apiJson("/api/memory");
+  renderMemories();
 }
 
 async function migrateLegacyChats() {
@@ -144,10 +156,15 @@ async function deleteChatById(chatId) {
   }
 }
 
-async function createMessage(chatId, role, content) {
+async function createMessage(chatId, role, content, metadata = {}) {
   const message = await apiJson(`/api/chats/${chatId}/messages`, {
     method: "POST",
-    body: JSON.stringify({ role, content }),
+    body: JSON.stringify({
+      role,
+      content,
+      tools: metadata.tools || [],
+      sources: metadata.sources || [],
+    }),
   });
   const chat = chats.find((item) => item.id === chatId);
   if (chat) {
@@ -272,7 +289,16 @@ function renderMessages() {
   for (const message of activeChat.messages) {
     const bubble = document.createElement("article");
     bubble.className = `message ${message.role}`;
-    bubble.textContent = message.content;
+    const content = document.createElement("div");
+    content.className = "message-content";
+    if (message.role === "assistant" || message.role.includes("pending")) {
+      content.innerHTML = renderMarkdown(message.content);
+    } else {
+      content.textContent = message.content;
+    }
+    bubble.appendChild(content);
+    renderMessageTools(bubble, message.tools || []);
+    renderMessageSources(bubble, message.sources || []);
     messagesEl.appendChild(bubble);
   }
   messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -281,6 +307,35 @@ function renderMessages() {
 function render() {
   renderChatList();
   renderMessages();
+  renderToolApproval();
+}
+
+function renderMemories() {
+  memoryList.innerHTML = "";
+  if (memories.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "memory-empty";
+    empty.textContent = "No saved memories";
+    memoryList.appendChild(empty);
+    return;
+  }
+
+  for (const memory of memories) {
+    const item = document.createElement("div");
+    item.className = "memory-item";
+
+    const text = document.createElement("span");
+    text.textContent = memory.content;
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.dataset.memoryDelete = memory.id;
+    remove.setAttribute("aria-label", "Delete memory");
+    remove.textContent = "Remove";
+
+    item.append(text, remove);
+    memoryList.appendChild(item);
+  }
 }
 
 function setStatus(kind, text) {
@@ -299,18 +354,26 @@ async function loadModelStatus() {
     const response = await fetch("/api/chat/models");
     if (!response.ok) throw new Error("Model status failed");
     const data = await response.json();
+    const savedModel = localStorage.getItem(SELECTED_MODEL_KEY);
+    const selectedModel = data.models.includes(savedModel) ? savedModel : data.default_model;
     modelSelect.innerHTML = "";
     for (const model of data.models) {
       const option = document.createElement("option");
       option.value = model;
       option.textContent = model;
-      option.selected = model === data.default_model;
+      option.selected = model === selectedModel;
       modelSelect.appendChild(option);
     }
-    setStatus(data.available ? "ready" : "error", data.available ? "Ollama connected" : "Ollama offline");
+    if (selectedModel) {
+      localStorage.setItem(SELECTED_MODEL_KEY, selectedModel);
+    }
+    setStatus(data.available ? "ready" : "error", data.available ? "Local runtime connected" : "Local runtime offline");
   } catch {
-    modelSelect.innerHTML = '<option value="">No models loaded</option>';
-    setStatus("error", "Ollama unavailable");
+    const savedModel = localStorage.getItem(SELECTED_MODEL_KEY);
+    modelSelect.innerHTML = savedModel
+      ? `<option value="${escapeHtml(savedModel)}">${escapeHtml(savedModel)}</option>`
+      : '<option value="">No models loaded</option>';
+    setStatus("error", "Local runtime unavailable");
   }
 }
 
@@ -333,6 +396,7 @@ function openChatMenu(chatId, anchor) {
 
 function selectChat(chatId) {
   activeChatId = chatId;
+  pendingToolCall = null;
   persistActiveChat();
   render();
   input.focus();
@@ -382,6 +446,131 @@ function escapeHtml(value) {
   })[char]);
 }
 
+function renderMarkdown(value = "") {
+  const lines = escapeHtml(value).split("\n");
+  const output = [];
+  let codeLines = [];
+  let inCode = false;
+  let listItems = [];
+
+  const flushList = () => {
+    if (!listItems.length) return;
+    output.push(`<ul>${listItems.map((item) => `<li>${formatInlineMarkdown(item)}</li>`).join("")}</ul>`);
+    listItems = [];
+  };
+
+  for (const line of lines) {
+    if (line.trim().startsWith("```")) {
+      flushList();
+      if (inCode) {
+        output.push(`<pre><code>${codeLines.join("\n")}</code></pre>`);
+        codeLines = [];
+      }
+      inCode = !inCode;
+      continue;
+    }
+    if (inCode) {
+      codeLines.push(line);
+      continue;
+    }
+    const listMatch = line.match(/^\s*[-*]\s+(.+)/);
+    if (listMatch) {
+      listItems.push(listMatch[1]);
+      continue;
+    }
+    flushList();
+    if (!line.trim()) {
+      output.push("<br>");
+    } else if (line.startsWith("### ")) {
+      output.push(`<h4>${formatInlineMarkdown(line.slice(4))}</h4>`);
+    } else if (line.startsWith("## ")) {
+      output.push(`<h3>${formatInlineMarkdown(line.slice(3))}</h3>`);
+    } else if (line.startsWith("# ")) {
+      output.push(`<h2>${formatInlineMarkdown(line.slice(2))}</h2>`);
+    } else {
+      output.push(`<p>${formatInlineMarkdown(line)}</p>`);
+    }
+  }
+  flushList();
+  if (codeLines.length) {
+    output.push(`<pre><code>${codeLines.join("\n")}</code></pre>`);
+  }
+  return output.join("");
+}
+
+function formatInlineMarkdown(value) {
+  return value
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+}
+
+function renderMessageTools(container, tools) {
+  if (!Array.isArray(tools) || !tools.length) return;
+  const section = document.createElement("div");
+  section.className = "message-tools";
+  for (const tool of tools) {
+    const row = document.createElement("div");
+    row.className = `tool-row is-${tool.status || "completed"}`;
+    const name = document.createElement("span");
+    name.className = "tool-name";
+    name.textContent = tool.name || "tool";
+    const summary = document.createElement("span");
+    summary.textContent = tool.summary || tool.status || "completed";
+    row.append(name, summary);
+    section.appendChild(row);
+  }
+  container.appendChild(section);
+}
+
+function renderMessageSources(container, sources) {
+  if (!Array.isArray(sources) || !sources.length) return;
+  const section = document.createElement("div");
+  section.className = "message-sources";
+  const label = document.createElement("span");
+  label.textContent = "Sources";
+  section.appendChild(label);
+  for (const source of sources) {
+    if (!/^https?:\/\//i.test(source.url || "")) continue;
+    const link = document.createElement("a");
+    link.href = source.url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = source.title || source.url;
+    section.appendChild(link);
+  }
+  container.appendChild(section);
+}
+
+function renderToolApproval() {
+  if (!pendingToolCall) {
+    toolApproval.hidden = true;
+    toolApproval.innerHTML = "";
+    return;
+  }
+
+  const isFileWrite = pendingToolCall.name === "file.write";
+  const arguments_ = pendingToolCall.arguments || {};
+  const title = isFileWrite ? "Confirm local file edit" : "Confirm local command";
+  const primary = isFileWrite ? arguments_.path || "" : arguments_.command || "";
+  const detail = isFileWrite
+    ? `${arguments_.mode || "replace"}\n${(arguments_.content || "").slice(0, 500)}`
+    : "Runs on this machine from the StillGaze project folder.";
+  const actionLabel = isFileWrite ? "Apply change" : "Run command";
+  toolApproval.hidden = false;
+  toolApproval.innerHTML = `
+    <div>
+      <strong>${title}</strong>
+      <code>${escapeHtml(primary)}</code>
+      <span>${escapeHtml(detail)}</span>
+    </div>
+    <div class="tool-actions">
+      <button type="button" data-tool-action="run">${actionLabel}</button>
+      <button type="button" data-tool-action="cancel">Cancel</button>
+    </div>
+  `;
+}
+
 async function handleMenuAction(action) {
   const chat = chats.find((item) => item.id === menuChatId);
   if (!chat) return;
@@ -415,38 +604,81 @@ async function sendMessage(content) {
 
   const userMessage = await createMessage(activeChat.id, "user", content);
   activeChat = getActiveChat();
-  const pending = { id: "pending", role: "assistant pending", content: "Thinking...", created_at: userMessage.created_at };
+  const pending = {
+    id: "pending",
+    role: "assistant pending",
+    content: "Thinking...",
+    tools: [],
+    sources: [],
+    created_at: userMessage.created_at,
+  };
+  activeChat.messages.push(pending);
+  render();
+  await streamAssistantResponse(activeChat);
+}
+
+async function runApprovedTool() {
+  const activeChat = getActiveChat();
+  if (!activeChat || !pendingToolCall) return;
+
+  const approvedToolCall = pendingToolCall;
+  pendingToolCall = null;
+  const pending = {
+    id: "pending",
+    role: "assistant pending",
+    content: "Running local tool...",
+    tools: [],
+    sources: [],
+    created_at: new Date().toISOString(),
+  };
   activeChat.messages.push(pending);
   render();
 
+  await streamAssistantResponse(activeChat, approvedToolCall);
+}
+
+async function streamAssistantResponse(activeChat, approvedToolCall = null) {
   sendButton.disabled = true;
   input.disabled = true;
 
   try {
-    const response = await fetch("/api/chat", {
+    const outboundMessages = activeChat.messages
+      .filter((message) => !message.role.includes("pending"))
+      .map((message) => ({
+        role: message.role,
+        content: message.content,
+      }));
+
+    const response = await fetch("/api/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        messages: activeChat.messages
-          .filter((message) => !message.role.includes("pending"))
-          .map((message) => ({
-            role: message.role,
-            content: message.content,
-          })),
+        messages: outboundMessages,
         temperature: Number(temperature.value),
         max_tokens: Number(responseLimit.value),
         model: modelSelect.value || undefined,
+        approved_tool_call: approvedToolCall || undefined,
       }),
     });
-
-    const data = await response.json();
     if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
       throw new Error(data.detail || "Chat request failed");
     }
 
+    const pending = activeChat.messages.find((message) => message.id === "pending");
+    const streamState = { content: "", tools: [], sources: [] };
+    await consumeChatStream(response, streamState, pending);
+
     activeChat.messages = activeChat.messages.filter((message) => message.id !== "pending");
-    await createMessage(activeChat.id, "assistant", data.message.content);
-    setStatus("ready", "Ollama connected");
+    const finalContent = streamState.content.trim() || "The local agent completed without a text response.";
+    await createMessage(activeChat.id, "assistant", finalContent, {
+      tools: streamState.tools,
+      sources: streamState.sources,
+    });
+    if (streamState.tools.some((tool) => tool.name === "memory.write" && tool.status === "completed")) {
+      await loadMemories();
+    }
+    setStatus("ready", "Local runtime connected");
   } catch (error) {
     activeChat.messages = activeChat.messages.filter((message) => message.id !== "pending");
     activeChat.messages.push({
@@ -463,6 +695,65 @@ async function sendMessage(content) {
     input.focus();
     render();
   }
+}
+
+async function consumeChatStream(response, state, pending) {
+  if (!response.body) throw new Error("Streaming response was unavailable.");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      handleChatEvent(JSON.parse(line), state, pending);
+    }
+    if (done) break;
+  }
+  if (buffer.trim()) {
+    handleChatEvent(JSON.parse(buffer), state, pending);
+  }
+}
+
+function handleChatEvent(event, state, pending) {
+  if (event.type === "token") {
+    state.content += event.content || "";
+  } else if (event.type === "tool" && event.tool) {
+    state.tools.push(event.tool);
+  } else if (event.type === "sources" && Array.isArray(event.sources)) {
+    state.sources = event.sources;
+  } else if (event.type === "approval" && event.tool) {
+    pendingToolCall = event.tool;
+  } else if (event.type === "error") {
+    throw new Error(event.message || "Streaming request failed");
+  }
+
+  if (pending) {
+    pending.content = state.content || "Thinking...";
+    pending.tools = state.tools;
+    pending.sources = state.sources;
+    renderMessages();
+    renderToolApproval();
+  }
+}
+
+async function createMemory(content) {
+  const memory = await apiJson("/api/memory", {
+    method: "POST",
+    body: JSON.stringify({ content, source: "user" }),
+  });
+  memories.unshift(memory);
+  renderMemories();
+}
+
+async function deleteMemory(memoryId) {
+  await apiJson(`/api/memory/${memoryId}`, { method: "DELETE" });
+  memories = memories.filter((memory) => memory.id !== memoryId);
+  renderMemories();
 }
 
 form.addEventListener("submit", (event) => {
@@ -484,6 +775,7 @@ input.addEventListener("keydown", (event) => {
 
 newChatButton.addEventListener("click", async () => {
   await createChat();
+  pendingToolCall = null;
   closeChatMenu();
   render();
   input.focus();
@@ -510,6 +802,31 @@ chatMenu.addEventListener("click", async (event) => {
   closeChatMenu();
 });
 
+toolApproval.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-tool-action]");
+  if (!button) return;
+  if (button.dataset.toolAction === "cancel") {
+    pendingToolCall = null;
+    renderToolApproval();
+    return;
+  }
+  await runApprovedTool();
+});
+
+memoryForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const content = memoryInput.value.trim();
+  if (!content) return;
+  memoryInput.value = "";
+  await createMemory(content);
+});
+
+memoryList.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-memory-delete]");
+  if (!button) return;
+  await deleteMemory(button.dataset.memoryDelete);
+});
+
 document.addEventListener("click", (event) => {
   if (!chatMenu.hidden && !chatMenu.contains(event.target) && !event.target.closest("[data-chat-menu]")) {
     closeChatMenu();
@@ -518,6 +835,12 @@ document.addEventListener("click", (event) => {
 
 temperature.addEventListener("input", () => {
   temperatureValue.textContent = Number(temperature.value).toFixed(1);
+});
+
+modelSelect.addEventListener("change", () => {
+  if (modelSelect.value) {
+    localStorage.setItem(SELECTED_MODEL_KEY, modelSelect.value);
+  }
 });
 
 themeToggle.addEventListener("change", () => {
@@ -529,6 +852,11 @@ themeToggle.addEventListener("change", () => {
 render();
 syncTextareaHeight();
 loadModelStatus();
+loadMemories().catch((error) => {
+  memories = [];
+  renderMemories();
+  setStatus("error", error.message);
+});
 loadChats().catch((error) => {
   setStatus("error", error.message);
 });

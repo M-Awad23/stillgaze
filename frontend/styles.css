@@ -454,6 +454,108 @@ output {
   color: var(--faint);
 }
 
+.message-content p {
+  margin: 0 0 0.65em;
+}
+
+.message-content p:last-child,
+.message-content ul:last-child,
+.message-content pre:last-child {
+  margin-bottom: 0;
+}
+
+.message-content h2,
+.message-content h3,
+.message-content h4 {
+  margin: 0.7em 0 0.4em;
+  color: var(--ink);
+  font-family: "IBM Plex Sans", Arial, sans-serif;
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.message-content ul {
+  margin: 0 0 0.75em 1.4em;
+}
+
+.message-content code {
+  padding: 0.1em 0.28em;
+  background: var(--field);
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.message-content pre {
+  max-width: 100%;
+  margin: 0.75em 0;
+  padding: 11px 12px;
+  overflow-x: auto;
+  border: 1px solid var(--grid);
+  background: var(--field);
+}
+
+.message-content pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.message-content a,
+.message-sources a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.message-tools,
+.message-sources {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--grid);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.tool-row {
+  display: grid;
+  gap: 9px;
+  align-items: start;
+}
+
+.tool-row::before {
+  width: 7px;
+  height: 7px;
+  margin-top: 4px;
+  background: var(--ok);
+  content: "";
+}
+
+.tool-row {
+  grid-template-columns: 7px minmax(78px, auto) minmax(0, 1fr);
+}
+
+.tool-row.is-error::before {
+  background: var(--fail);
+}
+
+.tool-row.is-pending::before {
+  background: var(--faint);
+}
+
+.tool-name {
+  color: var(--faint);
+}
+
+.message-sources > span {
+  color: var(--faint);
+  text-transform: uppercase;
+}
+
+.message-sources a {
+  overflow-wrap: anywhere;
+}
+
 .empty-state {
   display: grid;
   align-content: center;
@@ -479,6 +581,60 @@ output {
   grid-template-columns: 1fr 86px;
   gap: 12px;
   align-items: end;
+}
+
+.tool-approval {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border-left: 3px solid var(--ink);
+  color: var(--message-text);
+  background: var(--soft);
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.tool-approval[hidden] {
+  display: none;
+}
+
+.tool-approval code {
+  display: block;
+  margin-top: 5px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.tool-approval span {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+}
+
+.tool-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.tool-actions button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: var(--field);
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+
+.tool-actions button:hover {
+  color: var(--paper);
+  background: var(--ink);
 }
 
 textarea {
@@ -508,6 +664,83 @@ select {
   font-family: "IBM Plex Mono", Consolas, monospace;
   font-size: 0.84rem;
   outline: none;
+}
+
+input[type="text"] {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--ink);
+  background: var(--field);
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 0.8rem;
+  outline: none;
+}
+
+.memory-form label {
+  margin-top: 12px;
+}
+
+.memory-row {
+  display: grid;
+  grid-template-columns: 1fr 54px;
+  gap: 8px;
+}
+
+.memory-row button,
+.memory-item button {
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: var(--field);
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.memory-row button:hover,
+.memory-item button:hover {
+  color: var(--paper);
+  background: var(--ink);
+}
+
+.memory-list {
+  display: grid;
+  gap: 7px;
+  max-height: 190px;
+  margin-top: 10px;
+  overflow-y: auto;
+}
+
+.memory-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  padding: 8px;
+  border-left: 3px solid var(--grid);
+  background: var(--soft);
+  color: var(--message-text);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.memory-item span {
+  overflow-wrap: anywhere;
+}
+
+.memory-item button {
+  min-height: 28px;
+  padding: 0 8px;
+}
+
+.memory-empty {
+  padding: 8px;
+  border-left: 3px solid var(--grid);
+  color: var(--muted);
+  background: var(--soft);
+  font-size: 0.74rem;
 }
 
 select:focus {
@@ -599,5 +832,14 @@ textarea::placeholder {
 
   .message {
     width: 96%;
+  }
+
+  .tool-approval {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .tool-actions button {
+    flex: 1 1 auto;
   }
 }

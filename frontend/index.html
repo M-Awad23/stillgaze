@@ -29,13 +29,25 @@
         <div class="chat-list" id="chatList" aria-label="Saved chats"></div>
 
         <div class="status-panel">
-          <span id="statusLabel">Checking Ollama</span>
+          <span id="statusLabel">Checking local runtime</span>
         </div>
 
         <label for="modelSelect">Model</label>
         <select id="modelSelect">
           <option>Loading models...</option>
         </select>
+
+        <details class="settings-panel memory-panel">
+          <summary>Memory</summary>
+          <form class="memory-form" id="memoryForm">
+            <label for="memoryInput">Add memory</label>
+            <div class="memory-row">
+              <input id="memoryInput" type="text" maxlength="1000" placeholder="Remember..." />
+              <button type="submit">Add</button>
+            </div>
+          </form>
+          <div class="memory-list" id="memoryList"></div>
+        </details>
 
         <details class="settings-panel">
           <summary>Generation settings</summary>
@@ -61,6 +73,7 @@
 
       <section class="panel composer-panel" aria-label="Composer">
         <div class="section-title">Prompt</div>
+        <div class="tool-approval" id="toolApproval" hidden></div>
         <form class="composer" id="chatForm">
           <label class="sr-only" for="messageInput">Message</label>
           <textarea
