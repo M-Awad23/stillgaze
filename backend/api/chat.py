@@ -333,7 +333,11 @@ def augment_messages_with_local_context(
     messages: list[ChatMessage],
     tool_results: list[AgentToolResult],
 ) -> list[ChatMessage]:
-    context_parts: list[str] = []
+    context_parts: list[str] = [
+        "Prioritize the latest user message. Do not resume or execute an older unresolved request "
+        "unless the latest user message explicitly asks to continue it or approves it. A greeting "
+        "or unrelated new question starts a new conversational intent."
+    ]
     if memories := local_memories_context():
         context_parts.append(memories)
     completed_tools = [tool for tool in tool_results if tool.content]

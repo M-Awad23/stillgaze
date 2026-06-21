@@ -397,6 +397,8 @@ function openChatMenu(chatId, anchor) {
 function selectChat(chatId) {
   activeChatId = chatId;
   pendingToolCall = null;
+  sendButton.disabled = false;
+  input.disabled = false;
   persistActiveChat();
   render();
   input.focus();
@@ -691,9 +693,10 @@ async function streamAssistantResponse(activeChat, approvedToolCall = null) {
     });
     setStatus("error", "Request failed");
   } finally {
-    sendButton.disabled = false;
-    input.disabled = false;
-    input.focus();
+    const awaitingApproval = Boolean(pendingToolCall);
+    sendButton.disabled = awaitingApproval;
+    input.disabled = awaitingApproval;
+    if (!awaitingApproval) input.focus();
     render();
   }
 }
@@ -781,6 +784,8 @@ input.addEventListener("keydown", (event) => {
 newChatButton.addEventListener("click", async () => {
   await createChat();
   pendingToolCall = null;
+  sendButton.disabled = false;
+  input.disabled = false;
   closeChatMenu();
   render();
   input.focus();
@@ -812,7 +817,10 @@ toolApproval.addEventListener("click", async (event) => {
   if (!button) return;
   if (button.dataset.toolAction === "cancel") {
     pendingToolCall = null;
+    sendButton.disabled = false;
+    input.disabled = false;
     renderToolApproval();
+    input.focus();
     return;
   }
   await runApprovedTool();
