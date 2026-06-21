@@ -23,6 +23,12 @@ class ChatResult(BaseModel):
     done: bool
 
 
+class ChatStreamChunk(BaseModel):
+    content: str = ""
+    done: bool = False
+    done_reason: str | None = None
+
+
 class OllamaError(RuntimeError):
     pass
 
@@ -139,7 +145,7 @@ def stream_chat_with_ollama(
     model: str | None = None,
     temperature: float | None = None,
     num_predict: int | None = None,
-) -> Iterator[str]:
+) -> Iterator[ChatStreamChunk]:
     settings = get_settings()
     selected_model = model or settings.ollama_model
     options: dict[str, float | int] = {
@@ -170,10 +176,18 @@ def stream_chat_with_ollama(
                     continue
                 chunk = json.loads(raw_line.decode("utf-8"))
                 message = chunk.get("message")
+                content = ""
                 if isinstance(message, dict) and isinstance(message.get("content"), str):
                     content = message["content"]
-                    if content:
-                        yield content
+                yield ChatStreamChunk(
+                    content=content,
+                    done=bool(chunk.get("done", False)),
+                    done_reason=(
+                        chunk.get("done_reason")
+                        if isinstance(chunk.get("done_reason"), str)
+                        else None
+                    ),
+                )
     except HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
         raise OllamaError(

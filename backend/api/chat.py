@@ -274,14 +274,40 @@ def generate_chat_events(request: ChatRequest) -> Iterator[str]:
     messages = augment_messages_with_local_context(messages, tool_results)
     selected_model = request.model or get_settings().ollama_model
     yield ndjson_event("meta", model=selected_model)
+    stream_messages = [message.model_dump() for message in messages]
+    accumulated = ""
     try:
-        for token in stream_chat_with_ollama(
-            messages=[message.model_dump() for message in messages],
-            model=request.model,
-            temperature=request.temperature,
-            num_predict=request.max_tokens,
-        ):
-            yield ndjson_event("token", content=token)
+        for attempt in range(2):
+            done_reason: str | None = None
+            for chunk in stream_chat_with_ollama(
+                messages=stream_messages,
+                model=request.model,
+                temperature=request.temperature,
+                num_predict=request.max_tokens,
+            ):
+                if chunk.content:
+                    accumulated += chunk.content
+                    yield ndjson_event("token", content=chunk.content)
+                if chunk.done:
+                    done_reason = chunk.done_reason
+            if done_reason != "length":
+                break
+            if attempt == 0:
+                yield ndjson_event("continuation")
+                stream_messages.extend(
+                    [
+                        {"role": "assistant", "content": accumulated},
+                        {
+                            "role": "user",
+                            "content": (
+                                "Continue the previous answer exactly where it stopped. "
+                                "Do not repeat earlier text or add a new introduction."
+                            ),
+                        },
+                    ]
+                )
+            else:
+                yield ndjson_event("truncated")
     except OllamaError as exc:
         if tool_results:
             yield ndjson_event("token", content=tool_fallback_message(tool_results))

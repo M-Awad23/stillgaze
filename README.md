@@ -167,7 +167,7 @@ The SQLite database is ignored by git so local conversations stay local.
 - `OLLAMA_BASE_URL`: defaults to `http://127.0.0.1:11434`
 - `OLLAMA_MODEL`: defaults to `qwen2.5:7b`
 - `OLLAMA_NUM_GPU`: optional; set to `0` to force CPU inference through Ollama
-- `OLLAMA_NUM_PREDICT`: defaults to `160` to keep local CPU generations shorter
+- `OLLAMA_NUM_PREDICT`: defaults to `512`; length-limited responses automatically continue once
 - `OLLAMA_TIMEOUT_SECONDS`: defaults to `120`
 
 ## Tests

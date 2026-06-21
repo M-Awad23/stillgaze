@@ -422,7 +422,23 @@ output {
   min-height: 0;
   overflow-y: auto;
   padding-right: 14px;
-  scrollbar-color: #bbb transparent;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--faint) var(--soft);
+  scrollbar-gutter: stable;
+  scrollbar-width: auto;
+}
+
+.messages::-webkit-scrollbar {
+  width: 11px;
+}
+
+.messages::-webkit-scrollbar-track {
+  background: var(--soft);
+}
+
+.messages::-webkit-scrollbar-thumb {
+  border: 2px solid var(--soft);
+  background: var(--faint);
 }
 
 .message {

@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.api.chat import ndjson_event
+from backend.api.chat import ChatRequest, generate_chat_events, ndjson_event
 from backend.core import storage
 from backend.core.agent_loop import parse_tool_calls, run_agent_loop
 from backend.core.agent_tools import (
@@ -18,7 +18,7 @@ from backend.core.agent_tools import (
     write_local_file,
 )
 from backend.core.config import get_settings
-from backend.core.llm import ChatMessage
+from backend.core.llm import ChatMessage, ChatStreamChunk
 
 
 class ConfigTests(unittest.TestCase):
@@ -167,6 +167,35 @@ class AgentLoopTests(unittest.TestCase):
 class StreamTests(unittest.TestCase):
     def test_ndjson_event(self) -> None:
         self.assertEqual(ndjson_event("token", content="Hi"), '{"type": "token", "content": "Hi"}\n')
+
+    @patch("backend.api.chat.stream_chat_with_ollama")
+    def test_length_limited_stream_continues_once(self, mock_stream) -> None:
+        mock_stream.side_effect = [
+            iter(
+                [
+                    ChatStreamChunk(content="First", done=False),
+                    ChatStreamChunk(done=True, done_reason="length"),
+                ]
+            ),
+            iter(
+                [
+                    ChatStreamChunk(content=" second", done=False),
+                    ChatStreamChunk(done=True, done_reason="stop"),
+                ]
+            ),
+        ]
+        events = "".join(
+            generate_chat_events(
+                ChatRequest(
+                    messages=[ChatMessage(role="user", content="Explain something")],
+                    model="qwen2.5:7b",
+                    max_tokens=32,
+                )
+            )
+        )
+        self.assertIn('"type": "continuation"', events)
+        self.assertIn('"content": "First"', events)
+        self.assertIn('"content": " second"', events)
 
 
 if __name__ == "__main__":

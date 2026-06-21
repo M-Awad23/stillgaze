@@ -24,6 +24,14 @@ app.include_router(web_router)
 app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
 
 
+@app.middleware("http")
+async def disable_local_frontend_cache(request, call_next):
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 @app.get("/")
 def index():
     return FileResponse(frontend_dir / "index.html")

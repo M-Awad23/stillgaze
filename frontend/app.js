@@ -640,6 +640,7 @@ async function runApprovedTool() {
 async function streamAssistantResponse(activeChat, approvedToolCall = null) {
   sendButton.disabled = true;
   input.disabled = true;
+  setStatus("ready", "Generating response");
 
   try {
     const outboundMessages = activeChat.messages
@@ -728,6 +729,10 @@ function handleChatEvent(event, state, pending) {
     state.sources = event.sources;
   } else if (event.type === "approval" && event.tool) {
     pendingToolCall = event.tool;
+  } else if (event.type === "continuation") {
+    setStatus("ready", "Continuing response");
+  } else if (event.type === "truncated") {
+    state.content += "\n\nResponse limit reached. Choose Long or ask me to continue.";
   } else if (event.type === "error") {
     throw new Error(event.message || "Streaming request failed");
   }
